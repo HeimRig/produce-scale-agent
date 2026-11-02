@@ -26,6 +26,8 @@ COMMANDS = {
     "export": ([PY, "scripts/export_onnx.py"], "导出 ONNX"),
     "eval": ([PY, "scripts/eval_realshot.py"], "实拍留出集评估"),
     "threshold": ([PY, "scripts/calibrate_threshold.py"], "标定拒识阈值"),
+    "negative": ([PY, "scripts/fetch_negative.py"], "抓非果蔬负样本"),
+    "eval-neg": ([PY, "scripts/eval_negative.py"], "测未知物体检出率"),
     "calibrate": ([PY, "scripts/calibrate.py"], "HX711 去皮与标定"),
 }
 
