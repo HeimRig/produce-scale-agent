@@ -1,121 +1,130 @@
-# Produce Agent · 边缘具身果蔬计价秤
+# Produce Agent
 
-一台能自己完成交易的秤：**看见是什么 → 查价 → 称重 → 算钱 → 说出来 → 打票**。
-整条 `perception → decision → action` 闭环跑在树莓派上，能力同时暴露为 Python 工具、LLM function calling 和 MCP 服务。
+树莓派上的果蔬计价秤。放上商品，它自己完成识别、查价、称重、计价、语音播报和小票打印。
 
-| 闭环延迟 | 视觉推理 | 模型体积 | 实拍准确率 |
-|---|---|---|---|
-| **107 ms / 单** | 2.5 ms / 帧（P50，P95 3.1 ms） | 6.39 MB | **88.5%**（261 张留出） |
-
-> 闭环 = 放货到小票吐出；语音播报走异步线程，不阻塞交易。
+同一套能力有三处出口：命令行状态机、LLM function calling、MCP 服务。
 
 ![架构](docs/architecture.svg)
 
-## 30 秒跑起来
+实测（PC，i9-13900H）：
+
+- 闭环 107 ms/单，指放货到小票生成；语音异步播放，不计入
+- 视觉推理 2.5 ms/帧（P50），P95 3.1 ms
+- 模型 6.39 MB，MobileNetV3-Small fp32
+- 准确率：白底验证集 96.2%，实拍留出集 88.5%
+
+## 快速开始
 
 ```bash
 pip install -r requirements-pc.txt
 python demo.py
 ```
 
-不需要接硬件：摄像头与秤走 mock，小票落盘到 `out/`。装上真模型后识别走 ONNX 推理。
+不接硬件也能跑完整闭环，摄像头和秤走 mock，小票写到 `out/`。
 
-自检：`python -m pytest tests -q`（16 个用例，覆盖计价 / 路由 / 闭环编排）。
+模型文件不入库。可以直接从 [Releases](https://github.com/HeimRig/produce-scale-agent/releases/download/v1.0.0/produce_mobilenetv3s.onnx) 下载放进 `models/`，也可以按下面的步骤自己训练。
 
-> 模型文件不入库（6.4 MB）。直接下载 [produce_mobilenetv3s.onnx](https://github.com/HeimRig/produce-scale-agent/releases/download/v1.0.0/produce_mobilenetv3s.onnx) 放进 `models/` 即可跑 `demo.py`；也可以跑 `scripts/fetch_dataset.py` + `scripts/finetune.py` + `scripts/export_onnx.py` 自己生成，见下文。
+```bash
+python -m pytest tests -q     # 16 个用例：计价、意图路由、闭环编排
+```
 
-## 结果
+## 实测数据
 
-**域适应：白底训练集在真实场景会崩，这是本项目最有价值的一组数据**
+### 白底训练集换到实拍场景会失效
 
 | 训练数据 | 白底验证集 | 实拍留出集 |
 |---|---|---|
-| 只用 Fruits-360（白底棚拍） | 97.5% | **38.0%**（208 张） |
-| 白底 + 约 700 张实拍混训 | 96.2% | **88.5%**（261 张） |
+| 只用 Fruits-360（白底棚拍） | 97.5% | 38.0%（208 张） |
+| 白底 + 约 700 张实拍混训 | 96.2% | 88.5%（261 张） |
 
-同一骨干网、同一套类别，只改训练数据构成，实拍场景从 38% 提到 88.5%，白底指标基本没退步。详见 `docs/REALSHOT_REPORT.md`。
+骨干网和类别都没变，只改了训练数据构成。实拍从 38.0% 升到 88.5%，白底指标下降 1.3 个点。明细见 `docs/REALSHOT_REPORT.md`。
 
-**量化的结论是反的，但结论本身是结论**
+### INT8 量化在这个模型上不可用
 
 | 方案 | 体积 | 与 fp32 预测一致率 |
 |---|---|---|
 | 静态 QDQ（Int8，MinMax 校准） | 2.03 MB | 15.0% |
 | QOperator（Int8，per-channel） | 1.76 MB | 15.0% |
 | 只量化 Conv / MatMul / Gemm | 2.06 MB | 20.0% |
-| **fp32（采用）** | **6.39 MB** | **100%** |
+| fp32（最终采用） | 6.39 MB | 100% |
 
-动态量化更差（早期版本只有 10.3%）。hard-swish 与 SE 模块对定点数敏感，三条量化路径一致率都掉到 20% 以下，等于把模型打回随机猜。fp32 在 PC 上 P50 只有 2.5 ms，Pi 5 上按 6 倍算仍在预算内。想冲 int8 得上 QAT，见 `docs/ARCHITECTURE.md`。
+动态量化更低，早期版本只有 10.3%。hard-swish 和 SE 模块对定点数敏感，三条路径的一致率都掉到 20% 以下，量化后的模型基本相当于随机猜。fp32 在 PC 上 P50 是 2.5 ms，按 6 倍估算在 Pi 5 上也在预算内，所以交付 fp32。要用 int8 需要做 QAT，见 `docs/ARCHITECTURE.md`。
 
-## 三个设计取舍
+## 设计说明
 
-**1. 主链路用确定性状态机，大模型只走旁路。**
-结账流程是纯 Python 状态机（< 5 ms）；大模型只负责把「这个多少钱一斤」判断成该调哪个工具。实测本地 Ollama `qwen2.5-3B-Q4` 单次解析 180 ms（冷启动 6 s），比收银链路慢三个数量级，所以它只能待在旁路。降级链：Ollama → 云端 API → 关键词规则。
+### 主链路是状态机，LLM 只做意图判断
 
-**一个实测反直觉的细节：意图交给模型，槽位交给规则。** 让 3B 模型自己抽参数，它会把「两斤」算成 200 克，说「结账」还会凭空编出商品和重量。所以模型只出 `action`，商品键和重量由正则 + 价目表匹配决定。
+结账流程是纯 Python 状态机，延迟低于 5 ms。大模型只负责判断"这个多少钱一斤"该调哪个工具。
 
-**2. 工具层是唯一能力出口。**
-`AgentTools` 同时被状态机、LLM function calling、MCP 服务三处消费。加能力只改一处，换 LLM 或换接入方式不动业务代码。
+本地 Ollama（qwen2.5-3B-Q4）实测单次解析 180 ms，冷启动首次请求 6 s，比收银链路慢三个数量级，所以它不参与交易流程。降级顺序是 Ollama、云端 API、关键词规则。
 
-**3. 先保证准，再谈省。**
-量化掉点验证不过就不上线，宁可交 6.39 MB 的 fp32。
+一个实测出来的细节：模型抽参数不可靠。让它处理"来两斤番茄"，会算成 200 克（应为 1000 克）；说"结账"，会凭空编出 `item_key=apple, grams=100`。所以最终是模型只输出 `action`，商品键和重量由正则加价目表匹配决定。
+
+### 工具层是唯一出口
+
+`AgentTools` 同时被状态机、function calling 和 MCP 消费。新增能力只改这一层，换 LLM 或换接入方式都不动业务代码。
+
+### 精度优先
+
+量化验证不过就不上线。见上面的一致性数据。
 
 ## 目录
 
 ```
 produce-agent/
 ├── demo.py                    一键演示
-├── config.py                  全局配置（电脑/Pi 切换只改这里）
+├── config.py                  全局配置，电脑和 Pi 的差异都在这里
 ├── app/
-│   ├── main.py                CLI：单次结账 / 循环 / 自然语言
+│   ├── main.py                命令行入口：单次结账 / 循环 / 自然语言
 │   ├── perception/            camera（picamera2 / webcam / mock）、scale（HX711 / mock）
-│   ├── vision/                classifier（ONNX Runtime）、labels、imageops（去重/模糊判定）
-│   ├── agent/                 tools（能力出口）、planner（Ollama / API / 规则三级路由）、pricing
-│   └── action/                tts（edge/piper/pyttsx3）、printer（ESC/POS）
-├── mcp_server.py              MCP 工具服务（8 个工具）
-├── scripts/                   数据下载/采集/清洗/训练/导出/压测/标定
+│   ├── vision/                classifier（ONNX Runtime）、labels、imageops
+│   ├── agent/                 tools（能力出口）、planner（Ollama / API / 规则）、pricing
+│   └── action/                tts（edge / piper / pyttsx3）、printer（ESC/POS）
+├── mcp_server.py              MCP 服务，8 个工具
+├── scripts/                   数据下载、采集、清洗、训练、导出、压测、标定
 ├── models/                    模型与 labels.json（不入库）
-└── docs/                      ARCHITECTURE / POSITIONING / DATASET / PERF / ACCURACY / REALSHOT / BOM / DEMO_RECORD / DEMO_SCRIPT
+└── docs/                      架构、数据集、性能、准确率、BOM、演示分镜
 ```
 
-## 一、拿数据
+## 1. 准备数据
 
 ```bash
-# 白底主力源：Fruits-360（113 类，按本项目 12 类自动映射）
+# 白底主力源，Fruits-360 的 113 类自动映射到本项目的 12 类
 python scripts/fetch_dataset.py --source fruits360 --split train --per-class 300
 
-# 补胡萝卜（Fruits-360 里没有）
+# 补胡萝卜，Fruits-360 里没有这个类
 python scripts/fetch_dataset.py --source fruidet --per-class 30
 
-# 实拍源（真实背景，用来解决域差异）
-python scripts/fetch_dataset.py --source realshot  --split test  --per-class 40   # 测试分片
-python scripts/fetch_dataset.py --source realshot2 --split train --per-class 80   # 训练分片
+# 实拍源，用来消除白底与真实场景的差异
+python scripts/fetch_dataset.py --source realshot  --split test  --per-class 40
+python scripts/fetch_dataset.py --source realshot2 --split train --per-class 80
 python scripts/fetch_dataset.py --source fruidet --only avocado --out-dir data/realshot_extra
-python scripts/split_realshot.py            # 首次：从 realshot 留出 30%
-python scripts/merge_realshot.py --move     # 之后：新抓的图按 30/70 分进留出集与训练集
+python scripts/split_realshot.py            # 首次划分，留出 30%
+python scripts/merge_realshot.py --move     # 之后新抓的图按 30/70 分
 ```
 
-自己拍也行（`CAMERA_BACKEND` 支持 `mock` / `webcam` / `picamera2`）：
+也可以自己拍（`CAMERA_BACKEND` 支持 `mock` / `webcam` / `picamera2`）：
 
 ```bash
 python scripts/collect.py --source webcam --classes apple banana orange
 python scripts/collect.py --source dir --dir D:\photos\apple --class apple
 ```
 
-采集时自动丢弃模糊帧与重复帧：网页实时采集用 8×8 aHash（汉明距离 ≤ 5，容忍连拍），离线清洗用 16×16（≤ 1，只剔近乎复制的）。阈值太松会把整类判成一张——8×8/5 曾在黄瓜 60 张里只留下 6 张。采集规范（光照/角度/背景怎么变、同一颗果子为什么不能跨集合）见 `docs/DATASET.md`。
+采集时会丢弃模糊帧和重复帧。实时采集用 8×8 aHash，汉明距离阈值 5；离线清洗用 16×16，阈值 1。阈值放太松会把整个类判成一张，早期用 8×8 阈值 5 跑黄瓜，60 张只剩 6 张。采集规范见 `docs/DATASET.md`。
 
-## 二、训练与导出
+## 2. 训练与导出
 
 ```bash
-python scripts/prepare_dataset.py --clean   # 清洗 + 划分（实拍只进 train，不进 val）
-python scripts/finetune.py                  # 微调 8 轮，约 1000 张时 CPU 2 分钟
-python scripts/export_onnx.py               # 导出 fp32 + 试量化并校验一致率
-python scripts/bench.py                     # 性能压测 → docs/PERF_REPORT.md
-python scripts/eval_realshot.py             # 白底 vs 实拍对比 → docs/REALSHOT_REPORT.md
+python scripts/prepare_dataset.py --clean   # 清洗并划分，实拍只进训练集
+python scripts/finetune.py                  # 微调 8 轮，1000 张时 CPU 约 2 分钟
+python scripts/export_onnx.py               # 导出 fp32，同时试量化并校验一致率
+python scripts/bench.py                     # 压测，写 docs/PERF_REPORT.md
+python scripts/eval_realshot.py             # 白底与实拍对比，写 docs/REALSHOT_REPORT.md
 ```
 
-## 三、自然语言入口（可选）
+## 3. 自然语言入口
 
-装了 [Ollama](https://ollama.com) 就能用人话下指令，不装则自动退回关键词规则：
+可选。装了 [Ollama](https://ollama.com) 就能用人话下指令，没装会自动退回关键词规则。
 
 ```bash
 ollama pull qwen2.5:3b
@@ -123,39 +132,40 @@ python -m app.main --chat "苹果多少钱一斤"
 python -m app.main --chat "把番茄称一下，500克"
 ```
 
-`config.py` 里 `LLM_BACKEND` 可选 `auto` / `ollama` / `api` / `off`，`auto` 按 Ollama → 云端 API → 规则顺序降级，全部不可用也能跑。
+`config.py` 里 `LLM_BACKEND` 可选 `auto` / `ollama` / `api` / `off`，`auto` 按 Ollama、云端 API、规则依次降级。
 
-## 四、树莓派部署
+## 4. 树莓派部署
 
-`config.py` 改四项：
+改 `config.py` 四项：
 
 ```python
 CAMERA_BACKEND = "picamera2"
 SCALE_BACKEND  = "hx711"
-TTS_BACKEND    = "edge"      # 有网用 edge，断网用 piper/pyttsx3
-PRINTER_BACKEND = "mock"     # 有打印机再改 serial / usb
+TTS_BACKEND    = "edge"      # 断网用 piper 或 pyttsx3
+PRINTER_BACKEND = "mock"     # 接了打印机再改 serial / usb
 ```
 
 ```bash
 sudo apt install -y python3-picamera2 python3-lgpio python3-venv
 python3 -m venv --system-site-packages ~/pa-venv && source ~/pa-venv/bin/activate
 pip install -r requirements-pi.txt
-python scripts/calibrate.py        # 去皮 + 500g 砝码标定，写 scale.json
+python scripts/calibrate.py        # 去皮，再放 500g 砝码标定，写入 scale.json
 python -m app.main --loop
 ```
 
-启动时打印的 `[后端]` 里若是 `Hx711LibScale`，说明称重驱动接对了。
+启动时打印的 `[后端]` 里出现 `Hx711LibScale`，说明称重驱动接上了。
 
-### U 盘拷贝（电脑 → Pi）
+U 盘拷贝，电脑端（在项目目录打开 PowerShell）：
 
 ```powershell
-$src = (Get-Location).Path        # 在 produce-agent 目录里打开 PowerShell
+$src = (Get-Location).Path
 $dst = "E:\produce-agent"
 New-Item -ItemType Directory -Force -Path $dst | Out-Null
 robocopy $src $dst /E /XD out .git __pycache__ data /XF *.pyc
 Copy-Item "$src\models\*.onnx","$src\models\labels.json" "$dst\models\" -ErrorAction SilentlyContinue
-Get-ChildItem $dst -Recurse -File | Measure-Object -Property Length -Sum
 ```
+
+树莓派端：
 
 ```bash
 lsblk
@@ -164,7 +174,7 @@ mkdir -p ~/produce-agent && cp -r /mnt/usb/produce-agent/. ~/produce-agent/
 sudo umount /mnt/usb
 ```
 
-## 五、MCP 接入
+## 5. MCP 接入
 
 ```bash
 pip install mcp
@@ -172,20 +182,10 @@ python mcp_server.py
 python scripts/mcp_smoke.py     # 冒烟测试，不用接客户端
 ```
 
-暴露 `checkout`、`recognize_produce`、`get_price`、`weigh`、`make_quote`、`speak`、`print_receipt`、`list_items` 共 8 个工具。在支持 MCP 的客户端登记命令，任何 Agent 都能直接调这台秤。
+暴露 `checkout`、`recognize_produce`、`get_price`、`weigh`、`make_quote`、`speak`、`print_receipt`、`list_items`。在 MCP 客户端里登记启动命令即可调用。
 
-> 兼容 mcp 1.x / 2.x：2.x 把 `FastMCP` 改名成 `MCPServer`，`mcp_server.py` 里做了 import 兜底。
+兼容 mcp 1.x 和 2.x。2.x 把 `FastMCP` 改名成 `MCPServer`，`mcp_server.py` 里做了 import 兜底。
 
-## 交付物
+## License
 
-| 项 | 状态 |
-|---|---|
-| 闭环（真实模型端到端） | ✅ 107 ms/单 |
-| 视觉模型 | ✅ 12 类，白底 96.2% / 实拍 88.5%，fp32 6.39 MB |
-| 数据链路 | ✅ 下载 / 采集 / 清洗 / 划分 / 统计 |
-| 单元测试 | ✅ 16 个用例（pytest），覆盖计价、意图路由、闭环编排 |
-| 性能报告 | ✅ `docs/PERF_REPORT.md`（PC 实测，Pi 待补） |
-| 硬件 BOM | ✅ `docs/BOM.md` |
-| 演示视频 | ⬜ 分镜见 `docs/DEMO_SCRIPT.md` |
-
-**没有硬件的推进路径**：打印机 mock 落盘小票、系统 TTS 出声、USB 摄像头取帧，整条闭环在电脑上可完整演示；采购只影响"实物感"，不影响逻辑。
+MIT
