@@ -31,8 +31,44 @@ def checkout(paid: float | None = None, grams: float | None = None,
 
 
 @mcp.tool()
+def add_to_cart(item_key: str | None = None, grams: float | None = None) -> dict:
+    """识别并称重当前托盘商品，加入购物车，不结账"""
+    return _t().add_to_cart(item_key=item_key, grams=grams)
+
+
+@mcp.tool()
+def remove_item(index: int | None = None) -> dict:
+    """从购物车移除一件，默认最后一件；index 从 0 开始"""
+    return _t().remove_item(index=index)
+
+
+@mcp.tool()
+def list_cart() -> dict:
+    """查看购物车内容与小计"""
+    return _t().list_cart()
+
+
+@mcp.tool()
+def checkout_all(paid: float | None = None) -> dict:
+    """结算购物车全部商品，打一张汇总小票"""
+    return _t().checkout_all(paid=paid)
+
+
+@mcp.tool()
+def clear_cart() -> dict:
+    """清空购物车"""
+    return _t().clear_cart()
+
+
+@mcp.tool()
+def sales_summary(day: str | None = None) -> dict:
+    """按天汇总成交单数、件数、金额与商品排名，day 格式 YYYY-MM-DD，默认今天"""
+    return _t().sales_summary(day=day)
+
+
+@mcp.tool()
 def recognize_produce() -> dict:
-    """拍照识别托盘上的蔬果"""
+    """拍照识别托盘上的蔬果；两个候选太接近或置信度过低时返回 rejected"""
     return _t().recognize()
 
 

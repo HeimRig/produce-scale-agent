@@ -45,3 +45,23 @@ def test_grams_parsed():
 def test_unknown_command_falls_back_to_checkout():
     p, ctx = planner()
     assert p.plan("你好", ctx)["action"] == "checkout"
+
+
+def test_cart_intents():
+    p, ctx = planner()
+    r = p.plan("再来一个苹果", ctx)
+    assert r["action"] == "add_to_cart"
+    assert r["args"]["item_key"] == "apple"
+    assert p.plan("去掉刚才那个", ctx)["action"] == "remove_item"
+    assert p.plan("购物车有什么", ctx)["action"] == "list_cart"
+
+
+def test_sales_intent_before_price():
+    p, ctx = planner()
+    assert p.plan("今天卖了多少单", ctx)["action"] == "sales_summary"
+    assert p.plan("营业额多少", ctx)["action"] == "sales_summary"
+
+
+def test_add_to_cart_keeps_grams():
+    p, ctx = planner()
+    assert p.plan("再来两斤苹果", ctx)["args"]["grams"] == 1000

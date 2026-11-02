@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 import time
 import uuid
+from pathlib import Path
 
 import config
+from app import log
+from app.agent import report
+
+LOG = log.get("tools")
 
 
 class AgentTools:
@@ -13,9 +18,12 @@ class AgentTools:
         self.tts = tts
         self.printer = printer
         self.prices = prices
+        self.cart = []
         self._frame = None
         self._preds = None
         self._grams = None
+
+    # ---------- 感知 ----------
 
     def capture(self):
         self._frame = self.camera.capture()
@@ -27,22 +35,39 @@ class AgentTools:
             self.capture()
         self._preds = self.classifier.predict(self._frame)
         top = self._preds[0]
+        second = self._preds[1] if len(self._preds) > 1 else {"prob": 0.0, "cn": "-"}
+        margin = top["prob"] - second["prob"]
+
+        reason = None
+        if top["prob"] < config.CONF_THRESHOLD:
+            reason = (
+                f"置信度 {top['prob'] * 100:.1f}% 低于阈值 {config.CONF_THRESHOLD * 100:.0f}%"
+            )
+        elif margin < config.MARGIN_THRESHOLD:
+            reason = f"{top['cn']} 与 {second['cn']} 只差 {margin * 100:.1f} 个百分点"
         return {
-            "ok": top["prob"] >= config.CONF_THRESHOLD,
+            "ok": reason is None,
+            "rejected": reason is not None,
+            "reason": reason,
             "key": top["key"],
             "cn": top["cn"],
             "prob": round(top["prob"], 4),
+            "margin": round(margin, 4),
             "topk": [{"key": p["key"], "cn": p["cn"], "prob": round(p["prob"], 4)} for p in self._preds],
             "latency_ms": top.get("latency_ms"),
         }
 
-    def get_price(self, item_key):
-        if not item_key:
-            return {"ok": False, "error": "要查哪个商品？", "options": sorted(self.prices.items)}
-        item = self.prices.get(item_key)
-        if item is None:
-            return {"ok": False, "error": f"价目表没有 {item_key}", "options": sorted(self.prices.items)}
-        return {"ok": True, **item, "unit_price": item["price_per_kg"]}
+    def _save_unknown(self, r):
+        try:
+            Path(config.UNKNOWN_DIR).mkdir(parents=True, exist_ok=True)
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            p = Path(config.UNKNOWN_DIR) / f"{ts}_{r['key']}_{r['prob']:.2f}.jpg"
+            self._frame.save(p, quality=92)
+            LOG.warning("拒识样本已保存 %s", p.name)
+            return str(p)
+        except Exception as e:
+            LOG.warning("拒识样本保存失败：%s", e)
+            return None
 
     def weigh(self):
         grams, stable = self.scale.stable_grams()
@@ -54,62 +79,87 @@ class AgentTools:
             "min_g": config.MIN_WEIGHT_G,
         }
 
+    def get_price(self, item_key=None):
+        if not item_key:
+            return {"ok": False, "error": "要查哪个商品？", "options": sorted(self.prices.items)}
+        item = self.prices.get(item_key)
+        if item is None:
+            return {"ok": False, "error": f"价目表没有 {item_key}", "options": sorted(self.prices.items)}
+        return {"ok": True, **item, "unit_price": item["price_per_kg"]}
+
     def make_quote(self, item_key, grams=None):
         g = grams if grams is not None else self._grams
         if g is None:
             return {"ok": False, "error": "尚未称重"}
         return {"ok": True, **self.prices.quote(item_key, g)}
 
+    # ---------- 动作 ----------
+
     def speak(self, text):
         try:
             self.tts.speak(text, blocking=False)
             return {"ok": True, "text": text}
         except Exception as e:
-            print(f"[TTS] 播报失败（{type(e).__name__}: {e}），仅文字输出：{text}")
+            LOG.warning("播报失败（%s: %s），仅文字输出：%s", type(e).__name__, e, text)
             return {"ok": False, "text": text, "error": str(e)}
+
+    def _emit(self, items, paid=None, conf=None):
+        data = {
+            "order_id": time.strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:6].upper(),
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "items": items,
+            "total": round(sum(i["amount"] for i in items) + 1e-9, 2),
+            "paid": paid,
+            "conf": conf,
+        }
+        self.printer.print_receipt(data)
+        return data
 
     def print_receipt(self, item_key, grams=None, paid=None, conf=None):
         q = self.make_quote(item_key, grams)
         if not q["ok"]:
             return q
-        data = {
-            "order_id": time.strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:6].upper(),
-            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "items": [
-                {
-                    "cn": q["cn"],
-                    "plu": q["plu"],
-                    "unit_price": q["unit_price"],
-                    "grams": q["grams"],
-                    "amount": q["amount"],
-                }
-            ],
-            "total": q["amount"],
-            "paid": paid,
-            "conf": conf,
-        }
-        self.printer.print_receipt(data)
+        data = self._emit(
+            [{
+                "cn": q["cn"],
+                "plu": q["plu"],
+                "unit_price": q["unit_price"],
+                "grams": q["grams"],
+                "amount": q["amount"],
+            }],
+            paid=paid,
+            conf=conf,
+        )
         return {"ok": True, **data}
 
-    def checkout(self, item_key=None, paid=None, grams=None):
+    def _settle(self, item_key=None, paid=None, grams=None):
         steps = []
         t0 = time.perf_counter()
         last = [t0]
 
         def mark(name, result=None):
             now = time.perf_counter()
-            steps.append(
-                {"step": name, "result": result, "ms": round((now - last[0]) * 1000, 1)}
-            )
+            steps.append({"step": name, "result": result, "ms": round((now - last[0]) * 1000, 1)})
             last[0] = now
 
         self.capture()
         r = self.recognize()
         mark("recognize", r)
-        if not r["ok"] and item_key is None:
+        if r["rejected"] and item_key is None:
             self.capture()
             r = self.recognize()
             mark("recognize_retry", r)
+            if r["rejected"]:
+                saved = self._save_unknown(r)
+                self.speak("没有认出来，请把商品放到托盘中央再试一次")
+                return {
+                    "ok": False,
+                    "error": "拒识",
+                    "reason": r["reason"],
+                    "topk": r["topk"],
+                    "saved": saved,
+                    "steps": steps,
+                }
         key = item_key or r["key"]
 
         w = (
@@ -131,7 +181,7 @@ class AgentTools:
         q = self.make_quote(key, w["grams"])
         mark("quote", q)
 
-        text = f"{q['cn']}，{q['grams']/1000:.2f}公斤，单价{q['unit_price']:.2f}元每公斤，共{q['amount']:.2f}元"
+        text = f"{q['cn']}，{q['grams'] / 1000:.2f}公斤，单价{q['unit_price']:.2f}元每公斤，共{q['amount']:.2f}元"
         self.speak(text)
         mark("speak")
 
@@ -146,6 +196,112 @@ class AgentTools:
             "steps": steps,
             "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
+
+    def checkout(self, item_key=None, paid=None, grams=None):
+        if self.cart:
+            LOG.info("购物车里有 %d 件，本单只结算当前托盘商品", len(self.cart))
+        return self._settle(item_key=item_key, paid=paid, grams=grams)
+
+    # ---------- 购物车 ----------
+
+    def _cart_total(self):
+        return round(sum(i["amount"] for i in self.cart) + 1e-9, 2)
+
+    def add_to_cart(self, item_key=None, grams=None):
+        r = self.recognize()
+        if r["rejected"] and item_key is None:
+            self.capture()
+            r = self.recognize()
+            if r["rejected"]:
+                saved = self._save_unknown(r)
+                self.speak("没认出来，换一个角度或指定商品")
+                return {"ok": False, "error": "拒识", "reason": r["reason"],
+                        "topk": r["topk"], "saved": saved}
+        key = item_key or r["key"]
+
+        w = (
+            {"ok": True, "grams": round(float(grams), 1)}
+            if grams is not None
+            else self.weigh()
+        )
+        if not w["ok"]:
+            return {"ok": False, "error": "称重不稳定或重量过低", "grams": w.get("grams")}
+
+        q = self.make_quote(key, w["grams"])
+        entry = {
+            "key": q["key"],
+            "cn": q["cn"],
+            "plu": q["plu"],
+            "unit_price": q["unit_price"],
+            "grams": q["grams"],
+            "amount": q["amount"],
+            "conf": round(r["prob"], 4),
+        }
+        self.cart.append(entry)
+        self.speak(f"已加入{q['cn']}，{q['grams'] / 1000:.2f}公斤，{q['amount']:.2f}元，共{len(self.cart)}件")
+        return {
+            "ok": True,
+            "added": entry,
+            "count": len(self.cart),
+            "subtotal": self._cart_total(),
+            "items": self.list_cart()["items"],
+        }
+
+    def remove_item(self, index=None):
+        if not self.cart:
+            return {"ok": False, "error": "购物车是空的"}
+        i = len(self.cart) - 1 if index is None else int(index)
+        if not 0 <= i < len(self.cart):
+            return {"ok": False, "error": f"序号越界，当前 {len(self.cart)} 件（从 0 开始）"}
+        item = self.cart.pop(i)
+        return {"ok": True, "removed": item, "count": len(self.cart), "subtotal": self._cart_total()}
+
+    def clear_cart(self):
+        n = len(self.cart)
+        self.cart = []
+        return {"ok": True, "cleared": n}
+
+    def list_cart(self):
+        return {
+            "ok": True,
+            "count": len(self.cart),
+            "subtotal": self._cart_total(),
+            "items": [dict(i, index=n) for n, i in enumerate(self.cart)],
+        }
+
+    def checkout_all(self, paid=None):
+        if not self.cart:
+            return self._settle(paid=paid)
+
+        t0 = time.perf_counter()
+        items = [
+            {
+                "cn": i["cn"],
+                "plu": i["plu"],
+                "unit_price": i["unit_price"],
+                "grams": i["grams"],
+                "amount": i["amount"],
+            }
+            for i in self.cart
+        ]
+        data = self._emit(items, paid=paid, conf=None)
+        n = len(items)
+        self.cart = []
+
+        self.speak(f"共{n}件，合计{data['total']:.2f}元" + (f"，收您{paid:.2f}元" if paid else ""))
+        return {
+            "ok": True,
+            "items": items,
+            "count": n,
+            "total": data["total"],
+            "receipt": data,
+            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+        }
+
+    # ---------- 汇总 ----------
+
+    def sales_summary(self, day=None):
+        return report.summarize(day=day)
 
     def close(self):
         for obj in (self.camera, self.scale, self.tts, self.printer):
@@ -175,8 +331,75 @@ TOOL_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "add_to_cart",
+            "description": "识别并称重当前托盘商品，加入购物车，不结账",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_key": {"type": "string", "description": "指定商品键，不给则识别"},
+                    "grams": {"type": "number", "description": "指定重量（克），不给则读秤"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remove_item",
+            "description": "从购物车移除一件，默认移除最后一件",
+            "parameters": {
+                "type": "object",
+                "properties": {"index": {"type": "integer", "description": "从 0 开始的序号"}},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_cart",
+            "description": "查看购物车内容与小计",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "checkout_all",
+            "description": "结算购物车全部商品，打一张汇总小票；购物车为空时按单件结算",
+            "parameters": {
+                "type": "object",
+                "properties": {"paid": {"type": "number", "description": "顾客实收金额"}},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "clear_cart",
+            "description": "清空购物车",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sales_summary",
+            "description": "按天汇总成交单数、件数、金额与商品排名",
+            "parameters": {
+                "type": "object",
+                "properties": {"day": {"type": "string", "description": "YYYY-MM-DD，默认今天"}},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "recognize",
-            "description": "拍照并识别当前托盘上的蔬果种类",
+            "description": "拍照并识别当前托盘上的蔬果种类；不确定时会拒识",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },

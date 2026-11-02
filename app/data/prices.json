@@ -4,7 +4,7 @@
   "updated": "2026-11-01",
   "source": "本地价目表，按品类维护；可替换为批发市场或电商接口",
   "items": {
-    "apple":      {"cn": "苹果",   "price_per_kg": 8.00,  "plu": "4011", "origin": "山东烟台"},
+    "apple":      {"cn": "苹果",   "price_per_kg": 8.00,  "plu": "4131", "origin": "山东烟台"},
     "avocado":    {"cn": "牛油果", "price_per_kg": 15.00, "plu": "4046", "origin": "墨西哥"},
     "banana":     {"cn": "香蕉",   "price_per_kg": 5.00,  "plu": "4011", "origin": "海南"},
     "carrot":     {"cn": "胡萝卜", "price_per_kg": 4.00,  "plu": "4568", "origin": "山东潍坊"},

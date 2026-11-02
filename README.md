@@ -10,25 +10,33 @@
 
 实测（PC，i9-13900H）：
 
-- 闭环 107 ms/单，指放货到小票生成；语音异步播放，不计入
+- 闭环 104–111 ms/单，指放货到小票生成；语音异步播放，不计入
 - 视觉推理 2.5 ms/帧（P50），P95 3.1 ms
 - 模型 6.39 MB，MobileNetV3-Small fp32
-- 准确率：白底验证集 96.2%，实拍留出集 88.5%
+- 准确率：白底验证集 96.2%，实拍留出集 88.5%，加拒识后保留样本 96.8%
 
 ## 快速开始
 
 ```bash
 pip install -r requirements-pc.txt
-python demo.py
+python manage.py demo        # 单件闭环
+python manage.py cart        # 一单多件
+python manage.py test        # 25 个用例
 ```
 
-不接硬件也能跑完整闭环，摄像头和秤走 mock，小票写到 `out/`。
+不接硬件也能跑完整闭环，摄像头和秤走 mock，小票写到 `out/`，订单追加到 `out/sales.jsonl`。
 
 模型文件不入库。可以直接从 [Releases](https://github.com/HeimRig/produce-scale-agent/releases/download/v1.0.0/produce_mobilenetv3s.onnx) 下载放进 `models/`，也可以按下面的步骤自己训练。
 
-```bash
-python -m pytest tests -q     # 16 个用例：计价、意图路由、闭环编排
-```
+全部命令见 `python manage.py help`：
+
+| 命令 | 作用 |
+|---|---|
+| `demo` / `cart` | 单件 / 多件演示 |
+| `run` / `chat` | 单次结账（可 `--loop`、`--weight`）/ 自然语言 |
+| `mcp` | 启动 MCP stdio 服务 |
+| `fetch` / `prepare` / `train` / `export` | 数据与模型流水线 |
+| `eval` / `threshold` / `summary` | 实拍评估 / 拒识阈值标定 / 当日成交汇总 |
 
 ## 实测数据
 
@@ -40,6 +48,21 @@ python -m pytest tests -q     # 16 个用例：计价、意图路由、闭环编
 | 白底 + 约 700 张实拍混训 | 96.2% | 88.5%（261 张） |
 
 骨干网和类别都没变，只改了训练数据构成。实拍从 38.0% 升到 88.5%，白底指标下降 1.3 个点。明细见 `docs/REALSHOT_REPORT.md`。
+
+### 不确定就不报价
+
+收银场景里认错比认不出代价大，所以识别结果要过两道闸：top1 置信度、top1 与 top2 的差值。任一低于阈值就拒识，语音提示重放，不进入计价。
+
+| 阈值 | 误拒率 | 拦住错例 | 保留样本准确率 |
+|---|---|---|---|
+| 无拒识 | 0% | 0% | 88.5% |
+| conf 0.45 / margin 0.10（采用） | 6.9% | 77% | 96.8% |
+
+阈值不是拍脑袋定的。用 261 张留出集扫了 42 组网格，按「误拒率不超过 7% 时拦住最多错例」选出来：261 张里拒掉 39 张，其中 16 张是原本认对的（误拒）、23 张是原本认错的。被拒的帧自动落到 `data/unknown/`，是下一轮的训练素材。
+
+一个边界要说清：留出集里全是正样本，算不出「画面里根本没有商品」的检出率。表里的误拒率是实测值，拦住错例的比例只是代理指标——错例和「压根不是商品」不是一回事。要拿真实未知检出率，得另拍空托盘、手、手机这类负样本。
+
+明细与完整网格见 `docs/REJECT_REPORT.md`。
 
 ### INT8 量化在这个模型上不可用
 
@@ -66,6 +89,10 @@ python -m pytest tests -q     # 16 个用例：计价、意图路由、闭环编
 
 `AgentTools` 同时被状态机、function calling 和 MCP 消费。新增能力只改这一层，换 LLM 或换接入方式都不动业务代码。
 
+### 一单可以多件
+
+`checkout` 是单件闭环，`add_to_cart` / `remove_item` / `checkout_all` 走购物车。两条路共用同一份计价和小票格式化代码，多件小票每件带序号，合计只算一次。订单统一追加到 `out/sales.jsonl`，`manage.py summary` 按天汇总单数、件数、金额和商品排名。
+
 ### 精度优先
 
 量化验证不过就不上线。见上面的一致性数据。
@@ -74,18 +101,21 @@ python -m pytest tests -q     # 16 个用例：计价、意图路由、闭环编
 
 ```
 produce-agent/
-├── demo.py                    一键演示
+├── manage.py                  统一入口，所有命令从这一处进
+├── demo.py                    一键演示（--cart 走多件）
 ├── config.py                  全局配置，电脑和 Pi 的差异都在这里
 ├── app/
 │   ├── main.py                命令行入口：单次结账 / 循环 / 自然语言
+│   ├── log.py                 logging 初始化，业务输出仍走 print
 │   ├── perception/            camera（picamera2 / webcam / mock）、scale（HX711 / mock）
 │   ├── vision/                classifier（ONNX Runtime）、labels、imageops
-│   ├── agent/                 tools（能力出口）、planner（Ollama / API / 规则）、pricing
+│   ├── agent/                 tools（能力出口）、planner（Ollama / API / 规则）、pricing、report
 │   └── action/                tts（edge / piper / pyttsx3）、printer（ESC/POS）
-├── mcp_server.py              MCP 服务，8 个工具
-├── scripts/                   数据下载、采集、清洗、训练、导出、压测、标定
+├── mcp_server.py              MCP 服务，14 个工具
+├── tests/                     pytest，25 个用例
+├── scripts/                   数据下载、采集、清洗、训练、导出、评估、阈值标定、压测、标定
 ├── models/                    模型与 labels.json（不入库）
-└── docs/                      架构、数据集、性能、准确率、BOM、演示分镜
+└── docs/                      架构、数据集、性能、准确率、拒识、BOM、演示分镜
 ```
 
 ## 1. 准备数据
@@ -122,6 +152,7 @@ python scripts/finetune.py                  # 微调 8 轮，1000 张时 CPU 约
 python scripts/export_onnx.py               # 导出 fp32，同时试量化并校验一致率
 python scripts/bench.py                     # 压测，写 docs/PERF_REPORT.md
 python scripts/eval_realshot.py             # 白底与实拍对比，写 docs/REALSHOT_REPORT.md
+python scripts/calibrate_threshold.py       # 标定拒识阈值，写 docs/REJECT_REPORT.md
 ```
 
 ## 3. 自然语言入口
@@ -130,8 +161,9 @@ python scripts/eval_realshot.py             # 白底与实拍对比，写 docs/R
 
 ```bash
 ollama pull qwen2.5:3b
-python -m app.main --chat "苹果多少钱一斤"
-python -m app.main --chat "把番茄称一下，500克"
+python manage.py chat "苹果多少钱一斤"
+python manage.py chat "再来两斤番茄"
+python manage.py chat "今天卖了多少单"
 ```
 
 `config.py` 里 `LLM_BACKEND` 可选 `auto` / `ollama` / `api` / `off`，`auto` 按 Ollama、云端 API、规则依次降级。
@@ -184,7 +216,7 @@ python mcp_server.py
 python scripts/mcp_smoke.py     # 冒烟测试，不用接客户端
 ```
 
-暴露 `checkout`、`recognize_produce`、`get_price`、`weigh`、`make_quote`、`speak`、`print_receipt`、`list_items`。在 MCP 客户端里登记启动命令即可调用。
+暴露 14 个工具：`checkout`、`add_to_cart`、`remove_item`、`list_cart`、`checkout_all`、`clear_cart`、`sales_summary`、`recognize_produce`、`get_price`、`weigh`、`make_quote`、`speak`、`print_receipt`、`list_items`。在 MCP 客户端里登记启动命令即可调用。
 
 兼容 mcp 1.x 和 2.x。2.x 把 `FastMCP` 改名成 `MCPServer`，`mcp_server.py` 里做了 import 兜底。
 

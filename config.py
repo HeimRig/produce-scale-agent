@@ -29,7 +29,9 @@ VISION_LABELS = ROOT / "models" / "labels.json"
 VISION_INPUT = 224
 VISION_RESIZE = 256            # 短边缩放到 256 再中心裁 224
 VISION_TOPK = 3
-CONF_THRESHOLD = 0.55
+CONF_THRESHOLD = 0.45          # top1 低于此值判为不确定（scripts/calibrate_threshold.py 标定）
+MARGIN_THRESHOLD = 0.10        # top1-top2 低于此值判为两个候选分不开
+UNKNOWN_DIR = ROOT / "data" / "unknown"
 MIN_WEIGHT_G = 5.0
 
 PRICE_TABLE = ROOT / "app" / "data" / "prices.json"
@@ -59,3 +61,4 @@ PRINTER_CHARSET = "gb18030"
 PRINTER_WIDTH = 32
 
 OUT_DIR = ROOT / "out"
+SALES_JSONL = OUT_DIR / "sales.jsonl"

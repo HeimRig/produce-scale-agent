@@ -4,6 +4,7 @@ import json
 import time
 
 import config
+from app import log
 from app.action.printer import build_printer
 from app.action.tts import build_tts
 from app.agent.planner import build_planner
@@ -63,6 +64,7 @@ def main():
     ap.add_argument("--paid", type=float, default=None, help="实收金额")
     ap.add_argument("--item", type=str, default=None, help="跳过识别，指定商品键")
     args = ap.parse_args()
+    log.setup()
 
     tools, prices, backend = build_agent(seed_weight=args.weight)
     print("[后端]", backend)

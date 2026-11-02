@@ -1,36 +1,55 @@
 # -*- coding: utf-8 -*-
-"""一键演示：python demo.py
+"""一键演示：python demo.py [--cart]
 
-不需要参数。电脑上没有硬件也能跑完整个闭环（mock 摄像头/秤，小票落盘）。
+不带参数跑单件闭环；--cart 跑多件购物车结账。
+不需要硬件：摄像头和秤走 mock，小票落盘到 out/。
 """
 
 import random
 import sys
 import time
 
+from app import log
 from app.main import build_agent
+
+CART_SAMPLE = [("apple", 320), ("banana", 450), ("tomato", 260)]
 
 
 def main():
+    cart_mode = "--cart" in sys.argv
     weight = random.randint(280, 780)
     t0 = time.perf_counter()
+    log.setup()
+
     tools, prices, backend = build_agent(seed_weight=weight)
     print("=" * 52)
-    print(" 蔬果计价 · 一次完整闭环")
+    print(" 蔬果计价 · " + ("一单多件" if cart_mode else "一次完整闭环"))
     print("=" * 52)
     print(f" 后端  {backend}")
 
-    res = tools.checkout(paid=round((weight / 1000) * 10 + 5, 2))
+    if cart_mode:
+        for key, grams in CART_SAMPLE:
+            r = tools.add_to_cart(item_key=key, grams=grams)
+            if not r.get("ok"):
+                print(f" 加入失败 {key}：{r.get('error')}")
+        subtotal = tools.list_cart()
+        for it in subtotal["items"]:
+            print(f" #{it['index']}  {it['cn']:<6} {it['grams']:>6.0f} g × {it['unit_price']:.2f} = {it['amount']:.2f} 元")
+        print(f" 小计  {subtotal['subtotal']:.2f} 元 / {subtotal['count']} 件")
+        res = tools.checkout_all(paid=round(subtotal["subtotal"] + 10, 2))
+    else:
+        res = tools.checkout(paid=round((weight / 1000) * 10 + 5, 2))
+
     if not res.get("ok"):
-        print(f"\n失败：{res.get('error')}")
+        print(f"\n失败：{res.get('error')}  {res.get('reason') or ''}")
         tools.close()
         return 1
 
-    for step in res["steps"]:
+    for step in res.get("steps", []):
         r = step.get("result") or {}
         if step["step"].startswith("recognize"):
             top = "  ".join(f"{p['cn']} {p['prob']*100:.0f}%" for p in r.get("topk", []))
-            print(f" 识别  {r['cn']}  {r['prob']*100:.1f}%   [{top}]")
+            print(f" 识别  {r['cn']}  {r['prob']*100:.1f}%   差值 {r['margin']*100:.1f}   [{top}]")
         elif step["step"] == "weigh":
             print(f" 称重  {r['grams']:.1f} g   稳定={r['stable']}")
         elif step["step"] == "quote":

@@ -25,8 +25,12 @@ def format_receipt(data):
     w = config.PRINTER_WIDTH
     line = "-" * w
     rows = ["", _center("蔬果智能计价单", w), _center("Produce Agent", w), line]
-    for it in data.get("items", []):
-        rows.append(f"品名 {it['cn']}")
+    items = data.get("items", [])
+    multi = len(items) > 1
+    for n, it in enumerate(items, 1):
+        if multi and n > 1:
+            rows.append("")
+        rows.append(f"品名 {it['cn']}" + (f"  #{n}" if multi else ""))
         rows.append(_two_col(f"单价 {it['unit_price']:.2f} 元/kg", f"PLU {it.get('plu','-')}", w))
         rows.append(_two_col(f"净重 {it['grams']/1000:.3f} kg", f"{it['grams']:.0f} g", w))
         rows.append(_two_col("金额", f"{it['amount']:.2f} 元", w))
@@ -109,7 +113,8 @@ class EscposPrinter:
 
 
 def _append_record(data):
-    p = config.OUT_DIR / "sales.jsonl"
+    p = config.SALES_JSONL
+    p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as f:
         f.write(json.dumps(data, ensure_ascii=False) + "\n")
 

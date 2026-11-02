@@ -4,10 +4,20 @@ import os
 import re
 
 import config
+from app import log
 from app.agent.tools import TOOL_SCHEMA
 
+LOG = log.get("planner")
+NO_ARG_ACTIONS = {"list_cart", "clear_cart", "recognize", "weigh"}
+
 SYSTEM_PROMPT = """你是一个蔬果计价秤的调度器，只能从下面选一个工具：
-checkout(paid, grams, item_key) 完整计价闭环（称重+报价+播报+打票）
+checkout(paid, grams, item_key) 单件完整计价闭环（称重+报价+播报+打票）
+add_to_cart(item_key, grams) 识别并称重，加入购物车，不结账
+remove_item(index) 从购物车移除一件
+list_cart() 查看购物车
+checkout_all(paid) 结算购物车全部商品，打汇总小票
+clear_cart() 清空购物车
+sales_summary(day) 按天汇总营业额与商品排名
 recognize() 识别托盘上的商品
 get_price(item_key) 查单价
 weigh() 读重量
@@ -18,19 +28,26 @@ print_receipt(item_key, paid) 打小票
 规则：
 - 问价格（多少钱一斤、什么价）用 get_price，不要结账
 - 问多重用 weigh，问是什么用 recognize
-- 要结账/称一下/算钱用 checkout
+- 说「再来一个/加一份」用 add_to_cart，说「去掉/不要了」用 remove_item
+- 说「结账/买单」时购物车有货用 checkout_all，否则用 checkout
+- 问营业额、卖了多少用 sales_summary
 - 商品键只用用户提到的；没说就留空
 - 只输出 JSON：{"action":"工具名","args":{...}}，不要解释。"""
 
 KEYWORDS = {
+    "sales_summary": ["营业额", "今天卖", "卖了多少", "多少单", "营业额多少", "汇总"],
+    "list_cart": ["购物车", "几件了", "都有什么", "车里有"],
+    "remove_item": ["去掉", "不要了", "删掉", "退掉", "拿掉", "移除"],
+    "add_to_cart": ["加入购物车", "加一个", "加一份", "再来一个", "再来两", "再来一", "多来", "加上"],
     "get_price": ["单价", "价格", "怎么卖", "什么价", "多少钱一斤", "一斤多少", "一斤多少钱", "几块一斤"],
     "weigh": ["多重", "重量", "多少克", "几斤", "多少斤"],
     "recognize": ["这是什么", "识别", "看看是什么", "什么东西", "是什么菜"],
     "checkout": ["结账", "计价", "买单", "称一下", "算钱", "多少钱", "称重", "结算", "来一份", "称下"],
 }
 
-ORDER = ["get_price", "weigh", "recognize", "checkout"]
-ACTIONS = set(ORDER) | {"make_quote", "speak", "print_receipt", "get_price"}
+ORDER = ["sales_summary", "list_cart", "remove_item", "add_to_cart",
+         "get_price", "weigh", "recognize", "checkout"]
+ACTIONS = set(ORDER) | {"make_quote", "speak", "print_receipt", "checkout_all", "clear_cart"}
 WEIGHT_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?|[一二两三四五六七八九十])\s*(kg|公斤|千克|斤|g|克)")
 CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
           "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
@@ -76,12 +93,7 @@ class RulePlanner:
     def _args(action, item_key, grams):
         if action == "get_price":
             return {"item_key": item_key} if item_key else {}
-        if action in ("checkout", "print_receipt"):
-            args = {"item_key": item_key} if item_key else {}
-            if grams:
-                args["grams"] = grams
-            return args
-        if action == "make_quote":
+        if action in ("checkout", "print_receipt", "add_to_cart", "make_quote"):
             args = {"item_key": item_key} if item_key else {}
             if grams:
                 args["grams"] = grams
@@ -165,7 +177,9 @@ class OllamaPlanner:
         rule = RulePlanner().plan(command, ctx)
         if out.get("action") not in ACTIONS:
             out["action"] = rule["action"]
-        out["args"] = rule["args"]
+        out["args"] = {} if out["action"] in NO_ARG_ACTIONS else rule["args"]
+        if out["action"] == "checkout_all":
+            out["args"] = {}
         out["latency_ms"] = self.last_latency_ms
         return out
 
@@ -208,9 +222,9 @@ def build_planner(prices):
     for cls in order:
         try:
             p = cls()
-            print(f"[LLM] 使用 {cls.__name__}")
+            LOG.info("语义层使用 %s", cls.__name__)
             return p, cls.__name__
         except Exception as e:
-            print(f"[LLM] {cls.__name__} 不可用: {e}")
-    print("[LLM] 回退到规则解析")
+            LOG.warning("%s 不可用：%s", cls.__name__, e)
+    LOG.info("语义层回退到规则解析")
     return RulePlanner(), "RulePlanner"

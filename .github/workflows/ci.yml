@@ -30,7 +30,7 @@ jobs:
           pip install numpy pillow pytest
 
       - name: 语法检查
-        run: python -m compileall -q app scripts tests config.py demo.py mcp_server.py
+        run: python -m compileall -q app scripts tests config.py demo.py manage.py mcp_server.py
 
       - name: 单元测试
         run: python -m pytest tests -q
@@ -38,3 +38,7 @@ jobs:
       - name: 冒烟测试（无模型时走 mock）
         run: |
           python -c "from app.main import build_agent; t,p,b=build_agent(seed_weight=500); r=t.checkout(); print(b); print(r['item'], r['total']); assert r['ok']; t.close()"
+
+      - name: 购物车冒烟
+        run: |
+          python -c "from app.main import build_agent; t,p,b=build_agent(seed_weight=400); assert t.add_to_cart(item_key='apple', grams=400)['ok']; assert t.add_to_cart(item_key='tomato', grams=250)['ok']; r=t.checkout_all(); print(r['count'], r['total']); assert r['ok'] and r['count']==2 and t.list_cart()['count']==0; t.close()"

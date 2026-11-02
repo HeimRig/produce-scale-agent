@@ -1,19 +1,20 @@
 # 电脑端（Windows + Anaconda / PyCharm）
-numpy
-pillow
-onnxruntime
-openai
-edge-tts
-psutil
-pyttsx3
-opencv-python        # webcam 采集 / 实时预览
-pyarrow              # 读 HF 上的 parquet 数据集
-mcp                  # MCP 服务；1.x/2.x 都兼容（2.x 里 FastMCP 改名 MCPServer）
-pytest               # 跑 tests/
+# 约束用「下界=当前大版本，上界=下一个大版本」，避免自动跳到不兼容的 major
+
+numpy>=1.26,<3
+pillow>=10,<14
+onnxruntime>=1.18,<2
+openai>=1.40,<3
+edge-tts>=6.1,<9
+psutil>=5.9,<8
+pyttsx3>=2.90,<3
+opencv-python>=4.9,<5      # webcam 采集 / 实时预览
+pyarrow>=15,<30            # 读 HF 上的 parquet 数据集
+mcp>=1.2,<3                # 2.x 里 FastMCP 改名 MCPServer，代码两边都兼容
+pytest>=8,<10              # 跑 tests/
 
 # 训练与导出（只装了才用得上）
-torch
-torchvision
-onnx
-onnxscript          # torch 2.15 的 ONNX 导出必须
-onnxruntime         # 量化 + 推理
+torch>=2.2,<3
+torchvision>=0.17,<1
+onnx>=1.16,<2
+onnxscript>=0.1,<1         # torch 2.15 的 ONNX 导出必须
