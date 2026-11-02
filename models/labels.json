@@ -1,0 +1,62 @@
+[
+  {
+    "key": "apple",
+    "cn": "苹果",
+    "en": "apple"
+  },
+  {
+    "key": "avocado",
+    "cn": "牛油果",
+    "en": "avocado"
+  },
+  {
+    "key": "banana",
+    "cn": "香蕉",
+    "en": "banana"
+  },
+  {
+    "key": "carrot",
+    "cn": "胡萝卜",
+    "en": "carrot"
+  },
+  {
+    "key": "cucumber",
+    "cn": "黄瓜",
+    "en": "cucumber"
+  },
+  {
+    "key": "grape",
+    "cn": "葡萄",
+    "en": "grape"
+  },
+  {
+    "key": "onion",
+    "cn": "洋葱",
+    "en": "onion"
+  },
+  {
+    "key": "orange",
+    "cn": "橙子",
+    "en": "orange"
+  },
+  {
+    "key": "pear",
+    "cn": "梨",
+    "en": "pear"
+  },
+  {
+    "key": "pepper",
+    "cn": "辣椒",
+    "en": "pepper"
+  },
+  {
+    "key": "strawberry",
+    "cn": "草莓",
+    "en": "strawberry"
+  },
+  {
+    "key": "tomato",
+    "cn": "番茄",
+    "en": "tomato"
+  }
+]

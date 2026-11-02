@@ -1,0 +1,18 @@
+# 树莓派 5（Raspberry Pi OS Bookworm 64-bit）
+# picamera2 用系统包装：sudo apt install -y python3-picamera2 python3-lgpio python3-venv
+# 若用 venv，创建时要加 --system-site-packages
+
+numpy
+pillow
+onnxruntime
+openai
+edge-tts
+python-escpos
+pyserial
+psutil
+
+# 本地大模型（可选）
+# onnxruntime-genai
+
+# 本地 TTS（可选，离线兜底）
+# piper-tts

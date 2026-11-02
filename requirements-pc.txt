@@ -1,0 +1,19 @@
+# 电脑端（Windows + Anaconda / PyCharm）
+numpy
+pillow
+onnxruntime
+openai
+edge-tts
+psutil
+pyttsx3
+opencv-python        # webcam 采集 / 实时预览
+pyarrow              # 读 HF 上的 parquet 数据集
+mcp                  # MCP 服务；1.x/2.x 都兼容（2.x 里 FastMCP 改名 MCPServer）
+pytest               # 跑 tests/
+
+# 训练与导出（只装了才用得上）
+torch
+torchvision
+onnx
+onnxscript          # torch 2.15 的 ONNX 导出必须
+onnxruntime         # 量化 + 推理
