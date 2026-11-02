@@ -22,7 +22,7 @@ python demo.py
 
 自检：`python -m pytest tests -q`（16 个用例，覆盖计价 / 路由 / 闭环编排）。
 
-> 模型文件不入库（6.4 MB）。可以直接从 Releases 下载 `produce_mobilenetv3s.onnx` 放进 `models/`，也可以跑 `scripts/fetch_dataset.py` + `scripts/finetune.py` + `scripts/export_onnx.py` 自己生成，见下文。
+> 模型文件不入库（6.4 MB）。直接下载 [produce_mobilenetv3s.onnx](https://github.com/HeimRig/produce-scale-agent/releases/download/v1.0.0/produce_mobilenetv3s.onnx) 放进 `models/` 即可跑 `demo.py`；也可以跑 `scripts/fetch_dataset.py` + `scripts/finetune.py` + `scripts/export_onnx.py` 自己生成，见下文。
 
 ## 结果
 
