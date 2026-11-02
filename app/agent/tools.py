@@ -37,9 +37,11 @@ class AgentTools:
         }
 
     def get_price(self, item_key):
+        if not item_key:
+            return {"ok": False, "error": "要查哪个商品？", "options": sorted(self.prices.items)}
         item = self.prices.get(item_key)
         if item is None:
-            return {"ok": False, "error": f"价目表没有 {item_key}"}
+            return {"ok": False, "error": f"价目表没有 {item_key}", "options": sorted(self.prices.items)}
         return {"ok": True, **item, "unit_price": item["price_per_kg"]}
 
     def weigh(self):

@@ -2,21 +2,25 @@
 import json
 import os
 import re
-from pathlib import Path
 
 import config
 from app.agent.tools import TOOL_SCHEMA
 
-SYSTEM_PROMPT = """你是一个蔬果计价秤的调度器。可用工具：
-checkout(paid) 完整计价闭环
-recognize() 识别商品
+SYSTEM_PROMPT = """你是一个蔬果计价秤的调度器，只能从下面选一个工具：
+checkout(paid, grams, item_key) 完整计价闭环（称重+报价+播报+打票）
+recognize() 识别托盘上的商品
 get_price(item_key) 查单价
-weigh() 称重
-make_quote(item_key, grams) 算钱
-speak(text) 语音播报
+weigh() 读重量
+make_quote(item_key, grams) 只算钱不打票
+speak(text) 播报一句话
 print_receipt(item_key, paid) 打小票
-商品键：apple avocado banana carrot cucumber grape onion orange pear pepper strawberry tomato
-用户说话后，只输出一行 JSON：{"action":"工具名","args":{...}}，不要输出其他内容。"""
+
+规则：
+- 问价格（多少钱一斤、什么价）用 get_price，不要结账
+- 问多重用 weigh，问是什么用 recognize
+- 要结账/称一下/算钱用 checkout
+- 商品键只用用户提到的；没说就留空
+- 只输出 JSON：{"action":"工具名","args":{...}}，不要解释。"""
 
 KEYWORDS = {
     "get_price": ["单价", "价格", "怎么卖", "什么价", "多少钱一斤", "一斤多少", "一斤多少钱", "几块一斤"],
@@ -26,6 +30,7 @@ KEYWORDS = {
 }
 
 ORDER = ["get_price", "weigh", "recognize", "checkout"]
+ACTIONS = set(ORDER) | {"make_quote", "speak", "print_receipt", "get_price"}
 WEIGHT_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?|[一二两三四五六七八九十])\s*(kg|公斤|千克|斤|g|克)")
 CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
           "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
@@ -111,27 +116,58 @@ class ApiPlanner:
         return _parse_json_action(msg.content or "")
 
 
-class LocalPlanner:
-    def __init__(self):
-        import onnxruntime_genai as og
+class OllamaPlanner:
+    """本地 Ollama（HTTP /api/chat，JSON 模式），不依赖任何 SDK。"""
 
-        d = Path(config.LLM_LOCAL_DIR)
-        if not d.exists():
-            raise RuntimeError(f"本地模型目录不存在: {d}")
-        self.og = og
-        self.model = og.Model(str(d))
-        self.tokenizer = og.Tokenizer(self.model)
+    def __init__(self):
+        self.base = config.OLLAMA_BASE.rstrip("/")
+        self.model = config.OLLAMA_MODEL
+        tags = self._call("/api/tags", None, method="GET", timeout=5)
+        names = [m["name"] for m in tags.get("models", [])]
+        if not names:
+            raise RuntimeError("Ollama 已启动但没有模型，先 ollama pull 一个")
+        if self.model not in names:
+            self.model = names[0]
+        self.last_latency_ms = None
+
+    def _call(self, path, payload, method="POST", timeout=None):
+        import urllib.request
+
+        data = json.dumps(payload).encode() if payload is not None else None
+        req = urllib.request.Request(self.base + path, data=data, method=method)
+        if data:
+            req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=timeout or config.OLLAMA_TIMEOUT_S) as r:
+            return json.loads(r.read() or b"{}")
 
     def plan(self, command, ctx=None):
-        prompt = f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n<|im_start|>user\n{command}<|im_end|>\n<|im_start|>assistant\n"
-        params = self.og.GeneratorParams(self.model)
-        params.set_search_options(max_length=1024, do_sample=False)
-        params.input_ids = self.tokenizer.encode(prompt)
-        gen = self.og.Generator(self.model, params)
-        while not gen.is_done():
-            gen.generate_next_token()
-        text = self.tokenizer.decode(gen.get_sequence(0))
-        return _parse_json_action(text)
+        import time
+
+        items = "、".join(f"{k}({v.get('cn', '')})" for k, v in (ctx or {}).items())
+        system = f"{SYSTEM_PROMPT}\n可选商品：{items}"
+        payload = {
+            "model": self.model,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0, "num_predict": 96},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": command},
+            ],
+        }
+        t0 = time.perf_counter()
+        resp = self._call("/api/chat", payload)
+        self.last_latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+        text = (resp.get("message") or {}).get("content", "")
+        out = _parse_json_action(text)
+
+        # 意图交给模型，槽位（商品/重量）交给规则：小模型算「两斤」会算错，还会凭空编商品
+        rule = RulePlanner().plan(command, ctx)
+        if out.get("action") not in ACTIONS:
+            out["action"] = rule["action"]
+        out["args"] = rule["args"]
+        out["latency_ms"] = self.last_latency_ms
+        return out
 
 
 def _parse_json_action(text):
@@ -149,6 +185,14 @@ def _parse_json_action(text):
             args = json.loads(args)
         except json.JSONDecodeError:
             args = {}
+    if isinstance(args, dict):
+        for k in ("grams", "paid"):
+            v = args.get(k)
+            if isinstance(v, str):
+                try:
+                    args[k] = float(v)
+                except ValueError:
+                    args.pop(k, None)
     return {"action": action, "args": args}
 
 
@@ -156,8 +200,8 @@ def build_planner(prices):
     ctx = prices.items
     want = config.LLM_BACKEND
     order = {
-        "auto": [LocalPlanner, ApiPlanner],
-        "local": [LocalPlanner],
+        "auto": [OllamaPlanner, ApiPlanner],
+        "ollama": [OllamaPlanner],
         "api": [ApiPlanner],
         "off": [],
     }.get(want, [])

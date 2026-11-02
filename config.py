@@ -34,19 +34,21 @@ MIN_WEIGHT_G = 5.0
 
 PRICE_TABLE = ROOT / "app" / "data" / "prices.json"
 
-LLM_BACKEND = "auto"           # auto | local | api | off
-LLM_LOCAL_DIR = ROOT / "models" / "qwen2.5-1.5b-int4"
-LLM_MAX_NEW_TOKENS = 192
-API_BASE = "https://api.deepseek.com/v1"
-API_MODEL = "deepseek-chat"
-API_KEY_ENV = "DEEPSEEK_API_KEY"
-API_TIMEOUT_S = 12.0
-
 TTS_BACKEND = "auto"           # auto | edge | piper | pyttsx3 | mock
 TTS_VOICE = "zh-CN-XiaoxiaoNeural"
 PIPER_MODEL = ROOT / "models" / "zh_CN-huayan-medium.onnx"
 AUDIO_PLAYER = "aplay"
 AUDIO_PLAYER_WIN = "ffplay"
+
+# LLM 语义层（旁路，不进主链路）
+LLM_BACKEND = "auto"           # auto | ollama | api | off
+OLLAMA_BASE = "http://127.0.0.1:11434"
+OLLAMA_MODEL = "qwen25-3b:latest"
+OLLAMA_TIMEOUT_S = 20
+API_BASE = "https://api.deepseek.com/v1"
+API_MODEL = "deepseek-chat"
+API_KEY_ENV = "DEEPSEEK_API_KEY"
+API_TIMEOUT_S = 15
 
 PRINTER_BACKEND = "mock"       # mock | serial | usb
 PRINTER_PORT = "/dev/ttyUSB0"

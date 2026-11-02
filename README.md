@@ -49,7 +49,9 @@ python demo.py
 ## 三个设计取舍
 
 **1. 主链路用确定性状态机，大模型只走旁路。**
-1.5B 模型在 Pi 5 上 int4 只有 3–5 tok/s，一次工具往返 8–15 秒，实时收银不能用它。所以结账流程是纯 Python 状态机（< 5 ms），大模型只负责把「这个多少钱一斤」解析成工具调用。降级链：本地模型 → 云端 API → 关键词规则。
+结账流程是纯 Python 状态机（< 5 ms）；大模型只负责把「这个多少钱一斤」判断成该调哪个工具。实测本地 Ollama `qwen2.5-3B-Q4` 单次解析 180 ms（冷启动 6 s），比收银链路慢三个数量级，所以它只能待在旁路。降级链：Ollama → 云端 API → 关键词规则。
+
+**一个实测反直觉的细节：意图交给模型，槽位交给规则。** 让 3B 模型自己抽参数，它会把「两斤」算成 200 克，说「结账」还会凭空编出商品和重量。所以模型只出 `action`，商品键和重量由正则 + 价目表匹配决定。
 
 **2. 工具层是唯一能力出口。**
 `AgentTools` 同时被状态机、LLM function calling、MCP 服务三处消费。加能力只改一处，换 LLM 或换接入方式不动业务代码。
@@ -67,7 +69,7 @@ produce-agent/
 │   ├── main.py                CLI：单次结账 / 循环 / 自然语言
 │   ├── perception/            camera（picamera2 / webcam / mock）、scale（HX711 / mock）
 │   ├── vision/                classifier（ONNX Runtime）、labels、imageops（去重/模糊判定）
-│   ├── agent/                 tools（能力出口）、planner（LLM 路由）、pricing
+│   ├── agent/                 tools（能力出口）、planner（Ollama / API / 规则三级路由）、pricing
 │   └── action/                tts（edge/piper/pyttsx3）、printer（ESC/POS）
 ├── mcp_server.py              MCP 工具服务（8 个工具）
 ├── scripts/                   数据下载/采集/清洗/训练/导出/压测/标定
@@ -111,7 +113,19 @@ python scripts/bench.py                     # 性能压测 → docs/PERF_REPORT.
 python scripts/eval_realshot.py             # 白底 vs 实拍对比 → docs/REALSHOT_REPORT.md
 ```
 
-## 三、树莓派部署
+## 三、自然语言入口（可选）
+
+装了 [Ollama](https://ollama.com) 就能用人话下指令，不装则自动退回关键词规则：
+
+```bash
+ollama pull qwen2.5:3b
+python -m app.main --chat "苹果多少钱一斤"
+python -m app.main --chat "把番茄称一下，500克"
+```
+
+`config.py` 里 `LLM_BACKEND` 可选 `auto` / `ollama` / `api` / `off`，`auto` 按 Ollama → 云端 API → 规则顺序降级，全部不可用也能跑。
+
+## 四、树莓派部署
 
 `config.py` 改四项：
 
@@ -150,7 +164,7 @@ mkdir -p ~/produce-agent && cp -r /mnt/usb/produce-agent/. ~/produce-agent/
 sudo umount /mnt/usb
 ```
 
-## 四、MCP 接入
+## 五、MCP 接入
 
 ```bash
 pip install mcp

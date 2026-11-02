@@ -44,7 +44,8 @@ def show(res):
 def run_chat(tools, planner, text, prices):
     plan = planner.plan(text, prices.items)
     action, args = plan.get("action"), plan.get("args", {}) or {}
-    print(f"[路由] {action} {args}")
+    ms = plan.get("latency_ms")
+    print(f"[路由] {action} {args}" + (f"  ({ms:.0f} ms)" if ms else ""))
     fn = getattr(tools, action, None)
     if fn is None:
         return {"ok": False, "error": f"未知工具 {action}"}
