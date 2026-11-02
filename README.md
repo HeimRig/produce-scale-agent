@@ -1,5 +1,7 @@
 # Produce Agent
 
+![CI](https://github.com/HeimRig/produce-scale-agent/actions/workflows/ci.yml/badge.svg)
+
 树莓派上的果蔬计价秤。放上商品，它自己完成识别、查价、称重、计价、语音播报和小票打印。
 
 同一套能力有三处出口：命令行状态机、LLM function calling、MCP 服务。

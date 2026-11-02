@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pillow pytest
+
+      - name: 语法检查
+        run: python -m compileall -q app scripts tests config.py demo.py mcp_server.py
+
+      - name: 单元测试
+        run: python -m pytest tests -q
+
+      - name: 冒烟测试（无模型时走 mock）
+        run: |
+          python -c "from app.main import build_agent; t,p,b=build_agent(seed_weight=500); r=t.checkout(); print(b); print(r['item'], r['total']); assert r['ok']; t.close()"
