@@ -28,7 +28,7 @@ python manage.py test        # 25 个用例
 
 不接硬件也能跑完整闭环，摄像头和秤走 mock，小票写到 `out/`，订单追加到 `out/sales.jsonl`。
 
-模型文件不入库。可以直接从 [Releases](https://github.com/HeimRig/produce-scale-agent/releases/download/v1.0.0/produce_mobilenetv3s.onnx) 下载放进 `models/`，也可以按下面的步骤自己训练。
+模型文件不入库。可以直接从 [Releases](https://github.com/HeimRig/produce-scale-agent/releases/download/v1.1.0/produce_mobilenetv3s.onnx) 下载放进 `models/`，也可以按下面的步骤自己训练。
 
 全部命令见 `python manage.py help`：
 
