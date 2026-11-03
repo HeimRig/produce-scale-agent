@@ -1,6 +1,11 @@
 # Produce Agent
 
-![CI](https://github.com/HeimRig/produce-scale-agent/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/HeimRig/produce-scale-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/HeimRig/produce-scale-agent/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/HeimRig/produce-scale-agent?color=blue)](https://github.com/HeimRig/produce-scale-agent/releases)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white)
+![License](https://img.shields.io/github/license/HeimRig/produce-scale-agent)
+![Accuracy](https://img.shields.io/badge/real--shot_accuracy-88.5%25-informational)
+![Reject](https://img.shields.io/badge/unknown_object_reject-95.6%25-brightgreen)
 
 树莓派上的果蔬计价秤。放上商品，它自己完成识别、查价、称重、计价、语音播报和小票打印。
 
