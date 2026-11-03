@@ -1,48 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 500" width="920" height="500" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
-  <rect width="920" height="500" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <rect width="960" height="560" fill="#ffffff"/>
 
   <text x="24" y="38" font-size="20" font-weight="700" fill="#1f2328">Produce Agent · 一次结账的闭环</text>
   <text x="24" y="62" font-size="13" fill="#6b7280">perception → decision → action，Pi 5 上闭环预算约 1.2 秒（语音异步不计入）</text>
 
   <!-- pipeline -->
   <g>
-    <rect x="24" y="92" width="112" height="64" rx="10" fill="#eef4fb" stroke="#9db8d6"/>
-    <text x="80" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">拍照</text>
-    <text x="80" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">picamera2</text>
+    <rect x="24" y="92" width="104" height="64" rx="10" fill="#eef4fb" stroke="#9db8d6"/>
+    <text x="76" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">拍照</text>
+    <text x="76" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">picamera2</text>
 
-    <rect x="152" y="92" width="132" height="64" rx="10" fill="#eef4fb" stroke="#9db8d6"/>
-    <text x="218" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">识别</text>
-    <text x="218" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">MobileNetV3 · ONNX</text>
+    <rect x="144" y="92" width="124" height="64" rx="10" fill="#eef4fb" stroke="#9db8d6"/>
+    <text x="206" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">识别</text>
+    <text x="206" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">MobileNetV3 · ONNX</text>
 
-    <rect x="300" y="92" width="104" height="64" rx="10" fill="#eef4fb" stroke="#9db8d6"/>
-    <text x="352" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">查价</text>
-    <text x="352" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">prices.json</text>
+    <rect x="284" y="92" width="92" height="64" rx="10" fill="#fdf0ef" stroke="#d99a92"/>
+    <text x="330" y="120" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">拒识闸门</text>
+    <text x="330" y="139" font-size="10.5" fill="#5b6b7c" text-anchor="middle">conf / margin</text>
 
-    <rect x="420" y="92" width="112" height="64" rx="10" fill="#eef4fb" stroke="#9db8d6"/>
-    <text x="476" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">称重</text>
-    <text x="476" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">HX711</text>
+    <rect x="392" y="92" width="96" height="64" rx="10" fill="#eef4fb" stroke="#9db8d6"/>
+    <text x="440" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">查价</text>
+    <text x="440" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">prices.json</text>
 
-    <rect x="548" y="92" width="104" height="64" rx="10" fill="#eef7f0" stroke="#8ec4a3"/>
-    <text x="600" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">计价</text>
-    <text x="600" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">克 → 元</text>
+    <rect x="504" y="92" width="100" height="64" rx="10" fill="#eef4fb" stroke="#9db8d6"/>
+    <text x="554" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">称重</text>
+    <text x="554" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">HX711</text>
 
-    <rect x="668" y="92" width="104" height="64" rx="10" fill="#fdf3e8" stroke="#d9b483"/>
-    <text x="720" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">播报</text>
-    <text x="720" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">edge-tts</text>
+    <rect x="620" y="92" width="92" height="64" rx="10" fill="#eef7f0" stroke="#8ec4a3"/>
+    <text x="666" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">计价</text>
+    <text x="666" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">克 → 元</text>
 
-    <rect x="788" y="92" width="108" height="64" rx="10" fill="#fdf3e8" stroke="#d9b483"/>
-    <text x="842" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">打票</text>
-    <text x="842" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">ESC/POS 58mm</text>
+    <rect x="728" y="92" width="88" height="64" rx="10" fill="#fdf3e8" stroke="#d9b483"/>
+    <text x="772" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">播报</text>
+    <text x="772" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">edge-tts</text>
+
+    <rect x="832" y="92" width="96" height="64" rx="10" fill="#fdf3e8" stroke="#d9b483"/>
+    <text x="880" y="120" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">打票</text>
+    <text x="880" y="139" font-size="11" fill="#5b6b7c" text-anchor="middle">ESC/POS 58mm</text>
+  </g>
+
+  <!-- reject branch -->
+  <g>
+    <line x1="330" y1="156" x2="330" y2="186" stroke="#d99a92" stroke-width="1.4" stroke-dasharray="4 3"/>
+    <rect x="240" y="186" width="264" height="30" rx="6" fill="#fdf0ef" stroke="#e6c0bb"/>
+    <text x="372" y="205" font-size="11" fill="#8a4b45" text-anchor="middle">低于阈值 → 提示重放，帧落 data/unknown/</text>
   </g>
 
   <!-- arrows -->
   <g stroke="#9aa4b1" stroke-width="1.6" fill="none" marker-end="url(#a)">
-    <line x1="138" y1="124" x2="148" y2="124"/>
-    <line x1="286" y1="124" x2="296" y2="124"/>
-    <line x1="406" y1="124" x2="416" y2="124"/>
-    <line x1="534" y1="124" x2="544" y2="124"/>
-    <line x1="654" y1="124" x2="664" y2="124"/>
-    <line x1="774" y1="124" x2="784" y2="124"/>
+    <line x1="128" y1="124" x2="140" y2="124"/>
+    <line x1="268" y1="124" x2="280" y2="124"/>
+    <line x1="376" y1="124" x2="388" y2="124"/>
+    <line x1="488" y1="124" x2="500" y2="124"/>
+    <line x1="604" y1="124" x2="616" y2="124"/>
+    <line x1="712" y1="124" x2="724" y2="124"/>
+    <line x1="816" y1="124" x2="828" y2="124"/>
   </g>
   <defs>
     <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
@@ -54,37 +66,39 @@
   </defs>
 
   <!-- tool layer -->
-  <rect x="24" y="204" width="872" height="76" rx="12" fill="#f6f8fa" stroke="#c9d3de"/>
-  <text x="44" y="230" font-size="14" font-weight="700" fill="#1f2328">工具层 AgentTools · 唯一能力出口</text>
-  <text x="44" y="256" font-size="12.5" fill="#4b5563">recognize　get_price　weigh　make_quote　speak　print_receipt　checkout</text>
+  <rect x="24" y="244" width="904" height="86" rx="12" fill="#f6f8fa" stroke="#c9d3de"/>
+  <text x="44" y="270" font-size="14" font-weight="700" fill="#1f2328">工具层 AgentTools · 唯一能力出口</text>
+  <text x="44" y="294" font-size="12" fill="#4b5563">recognize　get_price　weigh　make_quote　speak　print_receipt　checkout</text>
+  <text x="44" y="314" font-size="12" fill="#4b5563">add_to_cart　remove_item　list_cart　checkout_all　clear_cart　sales_summary</text>
 
   <g stroke="#5b7fa6" stroke-width="1.6" fill="none" marker-end="url(#b)">
-    <line x1="218" y1="200" x2="218" y2="160"/>
-    <line x1="476" y1="200" x2="476" y2="160"/>
-    <line x1="720" y1="200" x2="720" y2="160"/>
+    <line x1="206" y1="240" x2="206" y2="164"/>
+    <line x1="554" y1="240" x2="554" y2="164"/>
+    <line x1="772" y1="240" x2="772" y2="164"/>
   </g>
 
   <!-- consumers -->
   <g>
-    <rect x="24" y="330" width="272" height="70" rx="10" fill="#ffffff" stroke="#c9d3de"/>
-    <text x="160" y="358" font-size="13.5" font-weight="600" fill="#1f2328" text-anchor="middle">确定性状态机（主链路）</text>
-    <text x="160" y="379" font-size="11.5" fill="#6b7280" text-anchor="middle">延迟 &lt; 5 ms，不做大模型推理</text>
+    <rect x="24" y="378" width="280" height="70" rx="10" fill="#ffffff" stroke="#c9d3de"/>
+    <text x="164" y="406" font-size="13.5" font-weight="600" fill="#1f2328" text-anchor="middle">确定性状态机（主链路）</text>
+    <text x="164" y="427" font-size="11.5" fill="#6b7280" text-anchor="middle">延迟 &lt; 5 ms，不做大模型推理</text>
 
-    <rect x="316" y="330" width="272" height="70" rx="10" fill="#ffffff" stroke="#c9d3de"/>
-    <text x="452" y="358" font-size="13.5" font-weight="600" fill="#1f2328" text-anchor="middle">LLM 语义路由（旁路）</text>
-    <text x="452" y="379" font-size="11.5" fill="#6b7280" text-anchor="middle">本地量化模型 → API → 规则兜底</text>
+    <rect x="324" y="378" width="280" height="70" rx="10" fill="#ffffff" stroke="#c9d3de"/>
+    <text x="464" y="406" font-size="13.5" font-weight="600" fill="#1f2328" text-anchor="middle">LLM 语义路由（旁路）</text>
+    <text x="464" y="427" font-size="11.5" fill="#6b7280" text-anchor="middle">Ollama 180 ms → API → 规则兜底</text>
 
-    <rect x="608" y="330" width="288" height="70" rx="10" fill="#ffffff" stroke="#c9d3de"/>
-    <text x="752" y="358" font-size="13.5" font-weight="600" fill="#1f2328" text-anchor="middle">MCP 服务（对外）</text>
-    <text x="752" y="379" font-size="11.5" fill="#6b7280" text-anchor="middle">任何 Agent 都能直接调这台秤</text>
+    <rect x="624" y="378" width="304" height="70" rx="10" fill="#ffffff" stroke="#c9d3de"/>
+    <text x="776" y="406" font-size="13.5" font-weight="600" fill="#1f2328" text-anchor="middle">MCP 服务（对外）</text>
+    <text x="776" y="427" font-size="11.5" fill="#6b7280" text-anchor="middle">14 个工具，任何 Agent 都能调这台秤</text>
   </g>
 
   <g stroke="#6b7280" stroke-width="1.4" fill="none" marker-end="url(#a)">
-    <line x1="160" y1="330" x2="160" y2="286"/>
-    <line x1="452" y1="330" x2="452" y2="286"/>
-    <line x1="752" y1="330" x2="752" y2="286"/>
+    <line x1="164" y1="378" x2="164" y2="334"/>
+    <line x1="464" y1="378" x2="464" y2="334"/>
+    <line x1="776" y1="378" x2="776" y2="334"/>
   </g>
 
-  <text x="24" y="442" font-size="12" fill="#6b7280">同一份能力被三处消费：加一个功能只改工具层，换 LLM 或换接入方式都不用动业务代码。</text>
-  <text x="24" y="466" font-size="12" fill="#6b7280">视觉 2.5 ms/帧 · 端到端 107 ms（PC）· 实拍准确率 88.5% · 模型 6.39 MB</text>
+  <text x="24" y="490" font-size="12" fill="#6b7280">同一份能力被三处消费：加一个功能只改工具层，换 LLM 或换接入方式都不用动业务代码。</text>
+  <text x="24" y="514" font-size="12" fill="#6b7280">视觉 2.5 ms/帧 · 闭环 107 ms（PC，40 单长稳无漂移）· 实拍 88.5%，拒识后保留样本 97.6%</text>
+  <text x="24" y="536" font-size="12" fill="#6b7280">未知物体检出 95.6%（456 张非果蔬）· 模型 6.39 MB fp32</text>
 </svg>

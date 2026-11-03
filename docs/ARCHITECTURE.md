@@ -11,10 +11,10 @@
 │  L4 交互层   CLI / 语音指令 / MCP 客户端 / 外部 Agent      │
 ├─────────────────────────────────────────────────────────┤
 │  L3 决策层   Planner（LLM 语义路由） + 规则兜底            │
-│              状态机 checkout：识别→查价→称重→算钱→播报→打票 │
+│              状态机 checkout：识别→拒识→查价→称重→算钱→播报→打票 │
+│              购物车：add_to_cart / remove_item / checkout_all │
 ├─────────────────────────────────────────────────────────┤
-│  L2 工具层   AgentTools：recognize/get_price/weigh/       │
-│              make_quote/speak/print_receipt/checkout      │
+│  L2 工具层   AgentTools（14 个能力，唯一出口）              │
 ├─────────────────────────────────────────────────────────┤
 │  L1 感知层   Camera(picamera2) │ Scale(HX711+lgpio) │      │
 │              Classifier(ONNX Runtime, MobileNetV3-Small)  │
@@ -23,22 +23,34 @@
 └─────────────────────────────────────────────────────────┘
 ```
 
+L2 的 14 个能力：
+
+| 分组 | 工具 |
+|---|---|
+| 感知 | `recognize`（含拒识）`get_price` `weigh` `make_quote` |
+| 单件 | `checkout` `print_receipt` |
+| 购物车 | `add_to_cart` `remove_item` `list_cart` `checkout_all` `clear_cart` |
+| 汇总 | `sales_summary` |
+| 动作 | `speak` |
+
 ## 3. 主链路时序
 
 ```
-[顾客放货] 
-   ↓ 80ms    Camera.capture() → RGB 1280×720
-   ↓ 60ms    Classifier.predict() → top1 类别 + 置信度
-   ↓  1ms    PriceTable.get(key) → 单价 / PLU / 产地
-   ↓ 400ms   Scale.stable_grams() → 7 次采样取中位数，判稳定
-   ↓  1ms    quote = grams/1000 × price，四舍五入到分
-   ↓ 900ms   TTS.speak("红富士苹果，0.512 公斤，9.80 元每公斤，共 5.02 元")
-   ↓ 600ms   Printer.print_receipt() → GB18030 编码的 ESC/POS 小票
+[顾客放货]
+   ↓ 59ms    拍照 + 识别：Camera.capture() → Classifier.predict() → top1 + 与 top2 差值
+   ↓  0ms    拒识闸门：conf < 0.55 或 margin < 0.10 → 重拍一次，仍不过则提示重放
+   ↓  0ms    查价：PriceTable.get(key) → 单价 / PLU / 产地
+   ↓  0ms    称重：Scale.stable_grams()，7 次采样取中位数（mock 秤无 IO，真机 HX711 约 400ms）
+   ↓  0ms    计价：quote = grams/1000 × price，四舍五入到分
+   ↓  1ms    播报：TTS.speak() 起后台线程，合成与播放都不阻塞
+   ↓ 45ms    打票：Printer.print_receipt()，GB18030 编码的 ESC/POS 小票
    ↓
-[完成，总耗时 ≈ 2.0s]
+[完成，PC 上 104–111ms；语音异步，不计入]
 ```
 
-## 4. 三个关键设计决策（面试重点）
+以上是 `tools.checkout()` 的 `steps` 分步计时，来自 `scripts/stability.py` 的实测。称重那一步在电脑上走 mock，所以接近 0；上树莓派接 HX711 后要重新测这一栏。
+
+## 4. 三个关键设计决策
 
 ### 决策一：确定性状态机跑主链路，LLM 只做旁路语义层
 
@@ -52,13 +64,13 @@
 
 降级链：本地模型 → 云端 API → 关键词规则。任何一层挂了，主链路都还能跑。
 
-### 决策二：视觉用微调小模型 + INT8 动态量化，不用零样本
+### 决策二：视觉用微调小模型 + fp32，量化试过但不划算
 
 - 骨干：MobileNetV3-Small（ImageNet 预训练），只换分类头，冻结前若干层
-- 训练：12 类常见蔬果，白底 + 实拍混合共 971 张（验证 80 张纯白底），8 epoch
+- 训练：12 类常见蔬果，白底 626 + 实拍 151 混合训练，验证 80 张纯白底，8 epoch
 - 导出：ONNX opset 18、静态 batch=1 → 试三种量化路径并校验一致率
 
-量化这件事我们真做了，结论和预期相反，这条比"我做了 int8"更值得讲：
+量化这件事我们真做了，结论和预期相反：
 
 | 方案 | 体积 | 与 fp32 一致率 |
 |---|---|---|
@@ -71,7 +83,7 @@
 
 原因是 V3-Small 的 hard-swish 激活 + SE 模块对 int8 极敏感，深度可分离卷积又放大了误差；V2 是 ReLU6，量化友好得多（对照组能保 91%）。但 V2 的 ImageNet 预训练权重在这台机器上多次下载校验失败，从头训练只有 76.9%，最终选了精度优先的 V3 fp32。
 
-fp32 在 PC 上 P50 仅 2.5 ms、P95 3.1 ms，Pi 5 上按 5–8 倍算也在 25 ms 以内，完全够用——**先保证准，再谈省**。要做 int8 需要 QAT（量化感知训练）或换 MobileNetV2 重新拿预训练权重，这是后续优化项。
+fp32 在 PC 上 P50 仅 2.5 ms、P95 3.1 ms，Pi 5 上按 5–8 倍算也在 25 ms 以内，够用。要做 int8 需要 QAT（量化感知训练）或换 MobileNetV2 重新拿预训练权重。
 
 为什么不用 CLIP 零样本：类别固定 12 个，微调后精度高出 20 个点以上，ViT 在 Pi 5 上一次推理 300ms+，超预算 5 倍。
 
@@ -80,31 +92,45 @@ fp32 在 PC 上 P50 仅 2.5 ms、P95 3.1 ms，Pi 5 上按 5–8 倍算也在 25 
 `AgentTools` 是唯一的能力出口。它同时被三处消费：
 
 1. 状态机直接调用（主链路）
-2. LLM function calling 的 schema（`TOOL_SCHEMA`）
-3. `mcp_server.py` 用 FastMCP 包装成 MCP 工具（外部 Agent 可调用）
+2. LLM function calling 的 schema（`TOOL_SCHEMA`，13 条）
+3. `mcp_server.py` 包装成 MCP 工具（外部 Agent 可调用，14 个）
 
 **加一个能力只改一个地方**，换 LLM 或换接入方式都不用动业务代码。
 
-## 5. 失败与降级
+MCP 侧兼容两代 SDK：1.x 的 `mcp.server.fastmcp.FastMCP` 与 2.x 的 `mcp.server.mcpserver.MCPServer`，`mcp_server.py` 里做 import 兜底。
+
+## 5. 拒识：两道闸门
+
+收银场景认错比认不出代价大，所以识别结果要过两道闸：
+
+| 闸门 | 阈值 | 作用 |
+|---|---|---|
+| top1 置信度 | 0.55 | 拦"整体都不确定" |
+| top1 − top2 | 0.10 | 拦"两个候选分不开" |
+
+阈值不是拍的，用正样本误拒率与负样本检出率联合标定，见 `docs/THRESHOLD_CURVE.md`。当前点：误拒 9.6%、未知检出 95.6%、保留样本准确率 97.6%。被拒的帧落 `data/unknown/`，是下一轮训练素材。
+
+## 6. 失败与降级
 
 | 故障 | 检测 | 处理 |
 |---|---|---|
-| 识别置信度 < 0.55 | 概率阈值 | 重拍一次；仍低则播报"请把商品放正"，连续 3 次转人工选品 |
+| 识别不确定 | conf < 0.55 或 margin < 0.10 | 自动重拍一次；仍不过则播报"没认出来，请放到托盘中央"，不报价、不打票，帧存 `data/unknown/` |
 | 称重抖动 | 7 次采样极差 > 3.5g | 重新采样，最多 3 次，仍抖则提示"请放稳" |
 | 重量 < 5g | 最小值门限 | 判定为空盘/异物，不结算 |
 | 打印机离线 | 打开串口抛异常 | 小票落盘到 `out/`，语音改播报金额，不阻塞交易 |
-| 断网 | TTS 合成失败 | 切 pyttsx3 本地引擎继续播 |
+| 断网 | TTS 合成失败 | 切 pyttsx3 本地引擎；仍失败则只输出文字，交易照常完成 |
+| 播报堆积 | 并发播报线程 > 3 | 丢弃新的播报，不排队；宁可少说一句，也不让播放器堆积 |
 | 温漂 | 连续空载读数偏移 > 2g | 提示重新去皮（`scripts/calibrate.py`） |
 
-## 6. 项目边界
+## 7. 项目边界
 
 本项目是独立工程，模型、标定、价目表、数据结构都在仓库内，不引用外部工程的任何文件。
 
-定位说明、与本科毕设的区别、以及面试时的讲法，见 `docs/POSITIONING.md`。
+定位说明与同类项目的区别见 `docs/POSITIONING.md`。
 
-## 7. 待补
+## 8. 待补
 
-- [ ] 12 类真实数据集（采集规范见 `docs/DATASET.md`）
-- [ ] 树莓派 5 实测性能（`python scripts/bench.py` 覆盖 `docs/PERF_REPORT.md`）
+- [ ] 树莓派 5 实测性能（`python scripts/stability.py --orders 40` 在 Pi 上覆盖 `docs/STABILITY_REPORT.md`）
 - [ ] 打印机型号到手后确认 GB18030 指令兼容（部分国产机需换 `FS &` 之外的汉字模式指令）
-- [ ] 10 分钟演示视频脚本（见 `docs/DEMO_SCRIPT.md`）
+- [ ] `strawberry` 无实拍图，公开数据集里没有可用的真实背景单果照
+- [ ] 自拍负样本（空托盘、手入镜）替换 Caltech-101 的代理数据

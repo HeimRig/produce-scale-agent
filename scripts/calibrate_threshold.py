@@ -90,13 +90,16 @@ def main():
     best = max(feasible, key=lambda g: (g["catch"], -g["frr"])) if feasible else min(grid, key=lambda g: g["frr"])
 
     lines = [
-        "# 拒识阈值标定",
+        "# 拒识阈值：只看正样本的扫描",
         "",
         f"- 数据：`data/realshot_holdout`，{len(rows)} 张实拍留出图",
         f"- 当前模型：{config.VISION_MODEL.name}，无拒识时准确率 {base_acc*100:.1f}%",
         f"- 选阈值规则：误拒率 ≤ {TARGET_FRR*100:.0f}% 的前提下，尽量多拦错例",
         "",
-        "## 选中的阈值",
+        "> 这份只用了正样本，看不到拒识对「根本不是商品」的效果。",
+        "> 最终阈值以 `scripts/threshold_curve.py` 的联合标定为准，本文件留作单边参照。",
+        "",
+        "## 单边最优（参考值）",
         "",
         f"`CONF_THRESHOLD = {best['conf']:.2f}`，`MARGIN_THRESHOLD = {best['margin']:.2f}`",
         "",

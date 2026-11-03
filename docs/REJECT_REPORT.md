@@ -1,10 +1,13 @@
-# 拒识阈值标定
+# 拒识阈值：只看正样本的扫描
 
 - 数据：`data/realshot_holdout`，261 张实拍留出图
 - 当前模型：produce_mobilenetv3s.onnx，无拒识时准确率 88.5%
 - 选阈值规则：误拒率 ≤ 7% 的前提下，尽量多拦错例
 
-## 选中的阈值
+> 这份只用了正样本，看不到拒识对「根本不是商品」的效果。
+> 最终阈值以 `scripts/threshold_curve.py` 的联合标定为准，本文件留作单边参照。
+
+## 单边最优（参考值）
 
 `CONF_THRESHOLD = 0.45`，`MARGIN_THRESHOLD = 0.10`
 

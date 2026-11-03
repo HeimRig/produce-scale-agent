@@ -29,7 +29,7 @@ VISION_LABELS = ROOT / "models" / "labels.json"
 VISION_INPUT = 224
 VISION_RESIZE = 256            # 短边缩放到 256 再中心裁 224
 VISION_TOPK = 3
-CONF_THRESHOLD = 0.45          # top1 低于此值判为不确定（scripts/calibrate_threshold.py 标定）
+CONF_THRESHOLD = 0.55          # top1 低于此值判为不确定（scripts/threshold_curve.py 联合标定）
 MARGIN_THRESHOLD = 0.10        # top1-top2 低于此值判为两个候选分不开
 UNKNOWN_DIR = ROOT / "data" / "unknown"
 MIN_WEIGHT_G = 5.0
@@ -38,6 +38,7 @@ PRICE_TABLE = ROOT / "app" / "data" / "prices.json"
 
 TTS_BACKEND = "auto"           # auto | edge | piper | pyttsx3 | mock
 TTS_VOICE = "zh-CN-XiaoxiaoNeural"
+TTS_MAX_CONCURRENT = 3         # 同时最多几个播报线程，超出的直接丢弃
 PIPER_MODEL = ROOT / "models" / "zh_CN-huayan-medium.onnx"
 AUDIO_PLAYER = "aplay"
 AUDIO_PLAYER_WIN = "ffplay"

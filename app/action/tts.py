@@ -5,12 +5,15 @@ import subprocess
 import sys
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 
 import config
 
 
 class MockTTS:
+    dropped = 0
+
     def speak(self, text, blocking=True):
         print(f"[TTS] {text}")
 
@@ -20,31 +23,57 @@ class MockTTS:
     def close(self):
         pass
 
+    @property
+    def pending(self):
+        return 0
+
 
 class EdgeTTS:
     def __init__(self, voice=None):
         self.voice = voice or config.TTS_VOICE
         self.tmp_dir = Path(tempfile.gettempdir())
         self._threads = []
+        self._lock = threading.Lock()
+        self.dropped = 0
 
     def speak(self, text, blocking=False):
         if blocking:
-            self._say(text, 0)
+            self._say(text)
             return
-        t = threading.Thread(target=self._say, args=(text, len(self._threads)), daemon=True)
-        self._threads.append(t)
+        with self._lock:
+            alive = [t for t in self._threads if t.is_alive()]
+            if len(alive) >= config.TTS_MAX_CONCURRENT:
+                self.dropped += 1
+                return
+            t = threading.Thread(target=self._say_and_untrack, args=(text,), daemon=True)
+            self._threads.append(t)
         t.start()
 
-    def _say(self, text, idx):
+    def _say_and_untrack(self, text):
+        try:
+            self._say(text)
+        finally:
+            with self._lock:
+                cur = threading.current_thread()
+                if cur in self._threads:
+                    self._threads.remove(cur)
+
+    def _say(self, text):
         import edge_tts
 
-        out = self.tmp_dir / f"produce_agent_tts_{idx}.mp3"
+        out = self.tmp_dir / f"produce_agent_tts_{uuid.uuid4().hex[:8]}.mp3"
 
         async def _run():
             await edge_tts.Communicate(text, self.voice).save(str(out))
 
-        asyncio.run(_run())
-        _play(out)
+        try:
+            asyncio.run(_run())
+            _play(out)
+        finally:
+            try:
+                out.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def wait(self):
         for t in list(self._threads):
@@ -53,8 +82,14 @@ class EdgeTTS:
     def close(self):
         self.wait()
 
+    @property
+    def pending(self):
+        return len([t for t in self._threads if t.is_alive()])
+
 
 class PiperTTS:
+    dropped = 0
+
     def __init__(self, model=None):
         self.model = Path(model or config.PIPER_MODEL)
         self.tmp = Path(tempfile.gettempdir()) / "produce_agent_tts.wav"
@@ -78,8 +113,14 @@ class PiperTTS:
     def close(self):
         pass
 
+    @property
+    def pending(self):
+        return 0
+
 
 class Pyttsx3TTS:
+    dropped = 0
+
     def __init__(self):
         import pyttsx3
 
@@ -94,6 +135,10 @@ class Pyttsx3TTS:
 
     def close(self):
         pass
+
+    @property
+    def pending(self):
+        return 0
 
 
 def _play(path):

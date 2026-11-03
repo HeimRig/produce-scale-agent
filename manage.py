@@ -28,6 +28,8 @@ COMMANDS = {
     "threshold": ([PY, "scripts/calibrate_threshold.py"], "标定拒识阈值"),
     "negative": ([PY, "scripts/fetch_negative.py"], "抓非果蔬负样本"),
     "eval-neg": ([PY, "scripts/eval_negative.py"], "测未知物体检出率"),
+    "curve": ([PY, "scripts/threshold_curve.py"], "联合标定阈值曲线"),
+    "stability": ([PY, "scripts/stability.py"], "长稳测试"),
     "calibrate": ([PY, "scripts/calibrate.py"], "HX711 去皮与标定"),
 }
 
